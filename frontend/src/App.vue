@@ -1,9 +1,12 @@
 <script setup lang="ts">
+import { ref } from 'vue';
 import { useCanBusStore } from './store/canbus';
 import FrameTable from './components/FrameTable.vue';
 import SignalChart from './components/SignalChart.vue';
+import AlertCenter from './components/AlertCenter.vue';
 
 const store = useCanBusStore();
+const rightPanelTab = ref<'chart' | 'alerts'>('alerts');
 
 function handleLoadDbc() {
   store.loadMockDbc();
@@ -63,6 +66,33 @@ function handleExport() {
         >
           导出CSV
         </button>
+        <div class="w-px h-6 bg-gray-600 mx-1"></div>
+        <div class="flex items-center gap-1 bg-gray-700 rounded p-0.5">
+          <button
+            @click="rightPanelTab = 'chart'"
+            class="px-2.5 py-1 text-xs rounded transition-colors"
+            :class="rightPanelTab === 'chart'
+              ? 'bg-gray-600 text-white'
+              : 'text-gray-400 hover:text-gray-200'"
+          >
+            信号图
+          </button>
+          <button
+            @click="rightPanelTab = 'alerts'"
+            class="px-2.5 py-1 text-xs rounded transition-colors flex items-center gap-1"
+            :class="rightPanelTab === 'alerts'
+              ? 'bg-gray-600 text-white'
+              : 'text-gray-400 hover:text-gray-200'"
+          >
+            告警中心
+            <span
+              v-if="store.alertStats.critical > 0"
+              class="w-4 h-4 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center font-bold"
+            >
+              {{ store.alertStats.critical }}
+            </span>
+          </button>
+        </div>
       </div>
     </header>
 
@@ -73,9 +103,10 @@ function handleExport() {
         <FrameTable />
       </div>
 
-      <!-- Right Panel: Signal Chart (40%) -->
+      <!-- Right Panel (40%) -->
       <div class="w-2/5 flex flex-col overflow-hidden">
-        <SignalChart />
+        <SignalChart v-if="rightPanelTab === 'chart'" />
+        <AlertCenter v-else />
       </div>
     </main>
 
@@ -94,6 +125,15 @@ function handleExport() {
         <span>RX: {{ store.busStats.rxCount }}</span>
         <span>TX: {{ store.busStats.txCount }}</span>
         <span>负载: {{ store.busLoadPercent }}%</span>
+        <span class="text-gray-600">|</span>
+        <span>
+          告警:
+          <span class="text-red-400 font-bold">{{ store.alertStats.critical }}</span>
+          <span class="text-gray-600">/</span>
+          <span class="text-yellow-400 font-bold">{{ store.alertStats.warning }}</span>
+          <span class="text-gray-600">/</span>
+          <span class="text-blue-400 font-bold">{{ store.alertStats.info }}</span>
+        </span>
       </div>
     </footer>
   </div>
