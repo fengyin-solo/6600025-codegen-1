@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import type { CanFrame, DbcMessage, BusStats, FaultAlert, AlertChangeLog, AlertSeverity } from '../types';
+import type { CanFrame, DbcMessage, BusStats, FaultAlert, AlertChangeLog, AlertSeverity, AlertChangeType } from '../types';
 import { parseDbc, decodeCanFrame, DEFAULT_DBC_CONTENT } from '../utils/dbc-parser';
 
 let frameIdCounter = 0;
@@ -164,7 +164,7 @@ export const useCanBusStore = defineStore('canbus', () => {
       if (severity && thresholdValue !== null) {
         updateOrCreateAlert(signalName, signalValue, severity, thresholdValue, frame);
       } else {
-        checkAutoResolve(signalName, signalValue, frame);
+        recordRecovery(signalName, signalValue, frame);
       }
     }
   }
@@ -186,8 +186,8 @@ export const useCanBusStore = defineStore('canbus', () => {
     };
 
     if (existing) {
-      const oldSeverity = existing.severity;
-      const oldStatus = existing.status;
+      const wasRecovered = existing.recoveredAt !== undefined;
+      const recoveredValue = existing.signalValue;
 
       existing.lastSeen = frame.timestamp;
       existing.count++;
@@ -196,18 +196,22 @@ export const useCanBusStore = defineStore('canbus', () => {
         existing.frameIds = existing.frameIds.slice(-20);
       }
       existing.signalValue = signalValue;
+      existing.recoveredAt = undefined;
 
       if (existing.severity !== severity) {
-        addChangeLog(existing.id, 'severity', oldSeverity, severity, 'system');
+        addChangeLog(existing.id, 'severity', 'severity', existing.severity, severity, 'system');
         existing.severity = severity;
       }
 
-      if (existing.status === 'resolved') {
-        addChangeLog(existing.id, 'status', 'resolved', 'active', 'system');
-        existing.status = 'active';
-      } else if (existing.status === 'acknowledged' && severity === 'critical') {
-        addChangeLog(existing.id, 'status', 'acknowledged', 'active', 'system');
-        existing.status = 'active';
+      if (wasRecovered) {
+        addChangeLog(
+          existing.id,
+          'trigger',
+          'signalValue',
+          recoveredValue !== undefined ? recoveredValue.toFixed(1) : '-',
+          signalValue.toFixed(1),
+          'system'
+        );
       }
     } else {
       const newAlert: FaultAlert = {
@@ -228,16 +232,17 @@ export const useCanBusStore = defineStore('canbus', () => {
       if (alerts.value.length > 200) {
         alerts.value = alerts.value.slice(0, 200);
       }
-      addChangeLog(newAlert.id, 'status', '-', 'active', 'system');
+      addChangeLog(newAlert.id, 'trigger', 'status', '-', 'active', 'system');
     }
   }
 
-  function checkAutoResolve(signalName: string, signalValue: number, frame: CanFrame) {
+  function recordRecovery(signalName: string, signalValue: number, frame: CanFrame) {
     const activeAlert = alerts.value.find(
       a => a.signalName === signalName && a.status !== 'resolved'
     );
 
     if (!activeAlert) return;
+    if (activeAlert.recoveredAt !== undefined) return;
 
     const threshold = signalThresholds.value[signalName];
     if (!threshold) return;
@@ -249,11 +254,18 @@ export const useCanBusStore = defineStore('canbus', () => {
       isNormal = signalValue > threshold.warning * 1.1;
     }
 
-    if (isNormal && activeAlert.status === 'active') {
-      activeAlert.status = 'acknowledged';
-      activeAlert.resolvedAt = frame.timestamp;
+    if (isNormal) {
+      const oldValue = activeAlert.signalValue;
+      activeAlert.recoveredAt = frame.timestamp;
       activeAlert.signalValue = signalValue;
-      addChangeLog(activeAlert.id, 'status', 'active', 'acknowledged', 'system-auto');
+      addChangeLog(
+        activeAlert.id,
+        'recovery',
+        'signalValue',
+        oldValue !== undefined ? oldValue.toFixed(1) : '-',
+        signalValue.toFixed(1),
+        'system'
+      );
     }
   }
 
@@ -264,7 +276,7 @@ export const useCanBusStore = defineStore('canbus', () => {
     const oldStatus = alert.status;
     alert.status = 'acknowledged';
     alert.acknowledgedAt = Date.now();
-    addChangeLog(alertId, 'status', oldStatus, 'acknowledged', operator);
+    addChangeLog(alertId, 'ack', 'status', oldStatus, 'acknowledged', operator);
   }
 
   function resolveAlert(alertId: string, note?: string, operator = 'user') {
@@ -278,14 +290,15 @@ export const useCanBusStore = defineStore('canbus', () => {
     if (note) {
       alert.resolutionNote = note;
     }
-    addChangeLog(alertId, 'status', oldStatus, 'resolved', operator);
+    addChangeLog(alertId, 'resolve', 'status', oldStatus, 'resolved', operator);
     if (note) {
-      addChangeLog(alertId, 'resolutionNote', '-', note, operator);
+      addChangeLog(alertId, 'resolve', 'resolutionNote', '-', note, operator);
     }
   }
 
   function addChangeLog(
     alertId: string,
+    changeType: AlertChangeType,
     field: string,
     oldValue: string,
     newValue: string,
@@ -295,6 +308,7 @@ export const useCanBusStore = defineStore('canbus', () => {
       id: `log-${++logIdCounter}`,
       alertId,
       timestamp: Date.now(),
+      changeType,
       field,
       oldValue,
       newValue,

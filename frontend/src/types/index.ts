@@ -41,6 +41,13 @@ export type AlertSeverity = 'critical' | 'warning' | 'info';
 
 export type AlertStatus = 'active' | 'acknowledged' | 'resolved';
 
+export type AlertChangeType =
+  | 'trigger'
+  | 'recovery'
+  | 'severity'
+  | 'ack'
+  | 'resolve';
+
 export interface FaultAlert {
   id: string;
   faultCode: string;
@@ -58,12 +65,14 @@ export interface FaultAlert {
   resolvedAt?: number;
   resolvedBy?: string;
   resolutionNote?: string;
+  recoveredAt?: number;
 }
 
 export interface AlertChangeLog {
   id: string;
   alertId: string;
   timestamp: number;
+  changeType: AlertChangeType;
   field: string;
   oldValue: string;
   newValue: string;

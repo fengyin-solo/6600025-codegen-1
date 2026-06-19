@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { useCanBusStore } from '../store/canbus';
-import type { FaultAlert, AlertChangeLog, AlertSeverity, AlertStatus } from '../types';
+import type { FaultAlert, AlertChangeLog, AlertSeverity, AlertStatus, AlertChangeType } from '../types';
 
 const store = useCanBusStore();
 const selectedAlertId = ref<string | null>(null);
@@ -99,9 +99,47 @@ function getFieldLabel(field: string): string {
   const labels: Record<string, string> = {
     status: '状态',
     severity: '严重级别',
+    signalValue: '信号值',
     resolutionNote: '处理说明'
   };
   return labels[field] || field;
+}
+
+function getChangeTypeLabel(changeType: AlertChangeType): string {
+  const labels: Record<AlertChangeType, string> = {
+    trigger: '异常触发',
+    recovery: '信号恢复',
+    severity: '级别变化',
+    ack: '人工确认',
+    resolve: '人工解决'
+  };
+  return labels[changeType];
+}
+
+function getChangeTypeClass(changeType: AlertChangeType): string {
+  const classes: Record<AlertChangeType, string> = {
+    trigger: 'bg-red-900/40 text-red-400 border-red-700/50',
+    recovery: 'bg-green-900/40 text-green-400 border-green-700/50',
+    severity: 'bg-yellow-900/40 text-yellow-400 border-yellow-700/50',
+    ack: 'bg-purple-900/40 text-purple-400 border-purple-700/50',
+    resolve: 'bg-cyan-900/40 text-cyan-400 border-cyan-700/50'
+  };
+  return classes[changeType];
+}
+
+function getChangeTypeDotClass(changeType: AlertChangeType): string {
+  const classes: Record<AlertChangeType, string> = {
+    trigger: 'bg-red-500',
+    recovery: 'bg-green-500',
+    severity: 'bg-yellow-500',
+    ack: 'bg-purple-500',
+    resolve: 'bg-cyan-500'
+  };
+  return classes[changeType];
+}
+
+function isOperatorManual(operator: string): boolean {
+  return operator === 'user';
 }
 
 function handleAcknowledge(alertId: string) {
@@ -216,6 +254,12 @@ function getSignalUnit(name: string): string {
               >
                 {{ getStatusLabel(alert.status) }}
               </span>
+              <span
+                v-if="alert.recoveredAt !== undefined && alert.status !== 'resolved'"
+                class="px-1.5 py-0.5 rounded text-xs font-medium bg-green-900/50 text-green-400 border border-green-700/50"
+              >
+                已恢复
+              </span>
             </div>
             <span class="text-xs text-gray-500">{{ formatTimestamp(alert.lastSeen) }}</span>
           </div>
@@ -324,6 +368,18 @@ function getSignalUnit(name: string): string {
             <span class="ml-1" :class="getStatusClass(selectedAlert.status)">
               {{ getStatusLabel(selectedAlert.status) }}
             </span>
+            <span
+              v-if="selectedAlert.recoveredAt !== undefined && selectedAlert.status !== 'resolved'"
+              class="ml-1 text-green-400"
+            >· 已恢复</span>
+          </div>
+          <div v-if="selectedAlert.recoveredAt !== undefined" class="bg-gray-800/50 rounded p-2">
+            <span class="text-gray-500">恢复时间:</span>
+            <span class="ml-1 text-green-400 font-mono">{{ formatDateTime(selectedAlert.recoveredAt) }}</span>
+          </div>
+          <div v-if="selectedAlert.acknowledgedAt" class="bg-gray-800/50 rounded p-2">
+            <span class="text-gray-500">确认时间:</span>
+            <span class="ml-1 text-purple-400 font-mono">{{ formatDateTime(selectedAlert.acknowledgedAt) }}</span>
           </div>
         </div>
 
@@ -350,11 +406,25 @@ function getSignalUnit(name: string): string {
               :key="log.id"
               class="flex items-start gap-2 text-xs"
             >
-              <span class="w-1.5 h-1.5 rounded-full bg-gray-600 mt-1.5 shrink-0"></span>
+              <span
+                class="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0"
+                :class="getChangeTypeDotClass(log.changeType)"
+              ></span>
               <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-2 text-gray-400">
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span
+                    class="px-1 py-0.5 rounded text-[10px] font-medium border"
+                    :class="getChangeTypeClass(log.changeType)"
+                  >
+                    {{ getChangeTypeLabel(log.changeType) }}
+                  </span>
                   <span class="font-mono text-gray-500">{{ formatTimestamp(log.timestamp) }}</span>
-                  <span class="text-gray-600">{{ log.operator }}</span>
+                  <span
+                    class="text-[10px]"
+                    :class="isOperatorManual(log.operator) ? 'text-cyan-500' : 'text-gray-600'"
+                  >
+                    {{ isOperatorManual(log.operator) ? '操作人' : '系统' }}
+                  </span>
                 </div>
                 <div class="text-gray-300 mt-0.5">
                   <span class="text-gray-500">{{ getFieldLabel(log.field) }}:</span>
